@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pattern_analyzer_mvp.py",
+            "console": "integratedTerminal",
+            "args": "\"/Users/lyuboslavlyubenov/Desktop/zerno-ai\" --model=\"qwen/qwen3-4b-2507\" --clear-cache"
+        }
+    ]
+}
