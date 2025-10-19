@@ -1,13 +1,16 @@
 """
-SLM-powered pattern extractor using LM Studio.
+SLM-powered pattern extractor using LM Studio and OpenAI-compatible APIs.
 Delegates pattern identification to local small language models.
 """
 
-from typing import List, Dict, Any, Literal
+from typing import List, Dict, Any, Literal, Optional
 from lmstudio import BaseModel, PredictionResult, llm
 import requests
 import json
 import re
+
+# Import OpenAI client for compatibility
+from openai_client import OpenAIClient, OpenAIExtractor
 
 class Segment(BaseModel):
     """A single identified code segment."""
@@ -79,14 +82,12 @@ class LMStudioClient:
     
     def _call_model_http(self, prompt: str) -> str:
         """Call LM Studio using HTTP API."""
-        url = f"{self.base_url}/v0/completions"
+        url = f"{self.base_url}/v1/completions"
         
         payload = {
             "model": self.model_name,
             "prompt": prompt,
             "temperature": 0.5,
-            "stream": False,
-            "max_tokens": 262144
         }
         
         response = requests.post(url, json=payload)
