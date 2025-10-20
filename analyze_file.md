@@ -20,7 +20,8 @@ Given a code snippet, identify all self-contained, reusable code blocks that rep
 
 - A block must be a syntactically-complete code construct: e.g., a full if/else branch (with both branches if present), complete try/catch/finally, a whole loop (for/while/do), a complete switch statement, a full function expression/declaration (only if the entire function is a single, widely reusable pattern), a complete variable declaration whose initializer is a full arrow/function expression, or a complete JSX return element (including matching opening and closing tags and any wrapping parentheses).
 - If the snippet is JSX/TSX, treat an entire JSXElement (or returned JSX tree) as an atomic unit — include its full content and closing tags.
--  Skip trivial single-line assignments and trivial returns (e.g., 'const x = 1' or 'return null') unless they are clearly a standalone, commonly reusable idiom (e.g., 'const truncate = (...) => { ... }'). Minimum for extraction is 3 lines, except for high-priority patterns
+-  Skip trivial single-line assignments and trivial returns (e.g., 'const x = 1' or 'return null') unless they are clearly a standalone, commonly reusable idiom (e.g., 'const truncate = (...) => { ... }'). 
+- Minimum for extraction is 3 lines
 
 2. Syntactic completeness heuristic
 
@@ -42,21 +43,16 @@ Given a code snippet, identify all self-contained, reusable code blocks that rep
 
 - Preserve exact whitespace and indentation in the "code" string, including blank lines. Use the same characters (no trimming), and ensure JSON escaping is correct (newlines as \n inside JSON string).
 
-6. Dependencies and context (must be embedded in description)
-
-- If the snippet references external variables/identifiers (props, state, styles, other functions), append a short parenthetical to the description showing required dependencies, e.g.: "description": "Handle dropdown keys (deps: showDropdown, items, setHighlightedIndex, handleItemSelect)"
-- This schema cannot be changed; therefore include dependency info only inside the description field.
-
-7. Splitting & deduplication
+6. Splitting & deduplication
 
 - If multiple repeated blocks exist (e.g., several similar handlers), include each occurrence as its own segment.
 - Skip trivial lines: single variable assignments with no logic, lone imports, comments, empty returns, or single-line getters/setters with no logic.
 
-8. If no suitable blocks exist
+7. If no suitable blocks exist
 
 - Return { "segments": [] }
 
-9. Self-validate prior to output
+8. Self-validate prior to output
 
 - For each segment, run a final sanity check:
   - Are braces/tags balanced? If no, expand until balanced.
@@ -64,7 +60,7 @@ Given a code snippet, identify all self-contained, reusable code blocks that rep
 - Only output segments that pass these checks.
 
 
-10. Examples (few-shot)
+9. Examples (few-shot)
 
 Input (TSX):
 if (isLoading) {
@@ -76,7 +72,7 @@ return (<div className="loading">Loading</div>);
 "code": "if (isLoading) {{\n  return (<div className=\"loading\">Loading</div>);\n}}",
 "line_start": 10,
 "line_end": 12,
-"description": "Render loading state (deps: isLoading)"
+"description": "Render loading state"
 }}
 
 Input (JS):
@@ -90,7 +86,7 @@ const truncate = (s, n) => s.length > n ? s.slice(0,n) + '...' : s;
 "description": "Truncate string with ellipsis"
 }}
 
-11. Output ordering and completeness
+10. Output ordering and completeness
 
 - Prefer blocks that are most likely reusable first (handlers, utilities, hooks, presentational components). But include all that match the rules.
 - Provide accurate line_start and line_end numbers corresponding to the original input lines (1-based).
