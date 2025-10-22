@@ -7,19 +7,20 @@ from typing import List, Dict, Any, Optional
 import requests
 import json
 import re
-from slm_extractor import Segment, IdentifiedSegments
+from models import Segment, IdentifiedSegments
 
 
 class OpenAIClient:
     """Client for interacting with OpenAI-compatible API endpoints."""
     
-    def __init__(self, base_url: str, api_key: Optional[str] = None, model: str = "gpt-3.5-turbo"):
+    def __init__(self, base_url: str, api_key: Optional[str] = None, model: str = "gpt-5-mini", max_tokens: int = 102_400):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.model = model
         self.headers = {
             "Content-Type": "application/json"
         }
+        self.max_tokens = max_tokens
         if api_key:
             self.headers["Authorization"] = f"Bearer {api_key}"
     
@@ -44,7 +45,7 @@ class OpenAIClient:
                 }
             ],
             "temperature": 0.5,
-            "max_tokens": 102_400
+            "max_tokens": self.max_tokens
         }
         
         response = requests.post(url, json=payload, headers=self.headers)
@@ -57,8 +58,8 @@ class OpenAIClient:
 class OpenAIExtractor:
     """Extracts code patterns using OpenAI-compatible API inference."""
     
-    def __init__(self, base_url: str, api_key: Optional[str] = None, model: str = "gpt-3.5-turbo"):
-        self.model_client = OpenAIClient(base_url, api_key, model)
+    def __init__(self, base_url: str, api_key: Optional[str] = None, model: str = "gpt-5-mini", max_tokens: int = 102_400):
+        self.model_client = OpenAIClient(base_url, api_key, model, max_tokens= max_tokens)
     
     def extract_patterns(self, code: str, language: str) -> IdentifiedSegments:
         """Extract patterns from code using OpenAI-compatible API."""
@@ -74,7 +75,7 @@ class OpenAIExtractor:
     def _build_prompt(self, code: str, language: str) -> str:
         """Build the prompt for pattern extraction."""
         try:
-            with open('analyze_file.md', 'r') as f:
+            with open('./prompts/analyze_file.md', 'r') as f:
                 prompt_template = f.read()
         except FileNotFoundError:
             raise FileNotFoundError("analyze_file.md not found - please create the prompt file")

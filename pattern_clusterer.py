@@ -7,23 +7,24 @@ import numpy as np
 from typing import List, Dict, Any
 import umap
 import hdbscan
-from slm_extractor import LMStudioClient, SLMExtractor
+from models import Segment, IdentifiedSegments
+from slm_extractor import ModelClient, SLMExtractor
 
 class PatternClusterer:
     """Clusters code patterns using UMAP and HDBSCAN on semantic embeddings."""
     
-    def __init__(self, min_cluster_size: int = 2, min_samples: int = 1, ):
+    def __init__(self, min_cluster_size: int = 3, min_samples: int = 1, n_neighbors: int = 17, n_components: int = 10):
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples
-        self.default_n_neighbors = 5
-        self.default_n_components = 5
-        self.lm_studio_client = LMStudioClient()
+        self.default_n_neighbors = n_neighbors
+        self.default_n_components = n_components
+        self.llm_client = ModelClient()
         self._initialize_clustering()
     
     def _initialize_clustering(self):
         """Initialize UMAP and HDBSCAN clustering."""
         try:
-            self.umap = umap.UMAP(n_neighbors=self.default_n_neighbors, n_components=self.default_n_components, metric='cosine')
+            self.umap = umap.UMAP(n_neighbors=self.default_n_neighbors, n_components=self.default_n_components, metric='cosine', min_dist=0.1)
             self.hdbscan = hdbscan.HDBSCAN(min_cluster_size=self.min_cluster_size, min_samples=self.min_samples)
             print(f"✅ UMAP and HDBSCAN initialized with min_cluster_size={self.min_cluster_size}, min_samples={self.min_samples}")
         except ImportError as e:
@@ -53,7 +54,6 @@ class PatternClusterer:
                     print(f"📊 Adjusting UMAP parameters: n_neighbors={n_neighbors}, n_components={n_components}")
                     self.umap = umap.UMAP(n_neighbors=n_neighbors, n_components=n_components, metric='cosine')
                 
-                # Reduce dimensionality with UMAP
                 reduced_embeddings = self.umap.fit_transform(embeddings)
             
             labels = self.hdbscan.fit_predict(reduced_embeddings)
@@ -76,7 +76,7 @@ class PatternClusterer:
             if label not in clusters:
                 clusters[label] = []
             clusters[label].append(segment)
-        
+
         return clusters
     
     def _format_patterns(self, clusters: Dict[int, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
@@ -124,7 +124,7 @@ class PatternClusterer:
         try:
             # Combine all descriptions from the cluster
             all_descriptions = "\n".join([seg['description'] for seg in segments])
-            
+
             # Create prompt for SLM to generate a unified cluster title
             prompt = f"""
             You are analyzing a cluster of similar code patterns. Below are descriptions of individual code segments that belong to the same cluster:
@@ -136,23 +136,19 @@ class PatternClusterer:
             
             Return json object in the format:
             {{
-                "title: "your generated title here"
+                "title": "your generated title here"
             }}
             """
             
-            # Use SLM to generate the title
-            result = self.lm_studio_client.call_model(prompt)
+            print(f"🤖 Generating cluster title for {len(segments)} segments...")
+            result = self.llm_client.call_model(prompt)
             
-            # Extract the title from the response
-            if hasattr(result, 'segments') and result.segments:
-                return result.segments[0].description
-            else:
-                # Fallback: use the most common description
-                desc_counts = {}
-                for seg in segments:
-                    desc = seg['description']
-                    desc_counts[desc] = desc_counts.get(desc, 0) + 1
-                return max(desc_counts.items(), key=lambda x: x[1])[0]
+            import json
+            parsed_result = json.loads(result)
+            title = parsed_result.get("title", result)  # Fallback to raw result if title not found
+            
+            print(f"✅ Generated cluster title: {title}")
+            return title
                 
         except Exception as e:
             print(f"⚠️  SLM cluster title generation failed: {e}")
@@ -161,4 +157,6 @@ class PatternClusterer:
             for seg in segments:
                 desc = seg['description']
                 desc_counts[desc] = desc_counts.get(desc, 0) + 1
-            return max(desc_counts.items(), key=lambda x: x[1])[0]
+            fallback_title = max(desc_counts.items(), key=lambda x: x[1])[0]
+            print(f"⚠️  Using fallback title after error: {fallback_title}")
+            return fallback_title

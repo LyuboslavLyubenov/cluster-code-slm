@@ -10,7 +10,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 
 from file_processor import FileProcessor
 from slm_extractor import SLMExtractor
@@ -22,15 +22,14 @@ class PatternAnalyzer:
     """Main orchestrator for code pattern analysis pipeline."""
     
     def __init__(self, codebase_path: str, output_path: str = "patterns.json", 
-                 model_name: str = "default", eps: float = 0.35):
+                 model_name: Optional[str] = None):
         self.codebase_path = Path(codebase_path)
         self.output_path = output_path
-        self.model_name = model_name
-        self.eps = eps
+        self.model_name = model_name or "qwen/qwen3-4b-2507"
         
         self.file_processor = FileProcessor()
-        self.slm_extractor = SLMExtractor(model_name, use_http=False, base_url="http://192.168.50.184:1234")
-        self.embedding_service = EmbeddingService()
+        self.slm_extractor = SLMExtractor(self.model_name, use_http=False, base_url="http://192.168.50.184:1234")
+        self.embedding_service = EmbeddingService("text-embedding-qwen3-embedding-0.6b", backend="lmstudio")
         self.pattern_clusterer = PatternClusterer()
         
         self.stats = {
@@ -39,16 +38,15 @@ class PatternAnalyzer:
             'patterns_detected': 0
         }
     
-    def analyze(self) -> Dict[str, Any]:
-        """Run the complete analysis pipeline with cache support."""
-        print("🔍 Starting code pattern analysis...")
-        
-        # Define cache file paths
+    def _get_cache_paths(self) -> tuple[str, str, str]:
+        """Get cache file paths for different stages."""
         files_cache_path = self.output_path.replace('.json', '_files_cache.json')
         segments_cache_path = self.output_path.replace('.json', '_segments_cache.json')
         embeddings_cache_path = self.output_path.replace('.json', '_embeddings_cache.json')
-        
-        # Step 1: Process files from codebase (or load from cache)
+        return files_cache_path, segments_cache_path, embeddings_cache_path
+    
+    def _process_files(self, files_cache_path: str):
+        """Process codebase files or load from cache."""
         if os.path.exists(files_cache_path):
             print("📁 Loading files data from cache...")
             with open(files_cache_path, 'r') as f:
@@ -72,12 +70,64 @@ class PatternAnalyzer:
                 "config": {
                     "codebase_path": str(self.codebase_path),
                     "model_name": self.model_name,
-                    "eps": self.eps
                 }
             }
             with open(files_cache_path, 'w') as f:
                 json.dump(files_cache, f, indent=2)
         
+        return files_data
+    
+    def _chunk_file_content(self, file_content: str, max_chars: int = 6000, overlap_ratio: float = 0.35) -> list:
+        """Split file content into overlapping chunks with balanced nesting."""
+
+        if len(file_content) <= max_chars:
+            return [file_content]
+
+        def is_nesting_depth_zero(text: str) -> bool:
+            """Check if nesting depth is zero (safe to split)."""
+            depth = 0
+            for char in text:
+                if char in '({[':
+                    depth += 1
+                elif char in ')}]':
+                    depth -= 1
+            return depth == 0
+        
+        lines = file_content.splitlines(keepends=True)
+        chunks = []
+        i = 0
+        total_lines = len(lines)
+        
+        while i < total_lines:
+            current_lines = []
+            char_count = 0
+            j = i
+            
+            while j < total_lines:
+                line = lines[j]
+                current_lines.append(line)
+                char_count += len(line)
+                
+                if char_count >= max_chars * 0.9:
+                    chunk_text = ''.join(current_lines)
+                    if is_nesting_depth_zero(chunk_text):
+                        break
+                if char_count > max_chars * 1.1:
+                    break
+                j += 1
+            
+            chunk_text = ''.join(current_lines)
+            chunks.append(chunk_text)
+            
+            # Slide forward with overlap
+            chunk_lines = len(current_lines)
+            overlap_lines = int(chunk_lines * overlap_ratio)
+            i = i + (chunk_lines - overlap_lines)
+        
+        return chunks
+    
+    def _extract_segments(self, files_data, segments_cache_path: str) -> list:
+        """Extract code segments using SLM or load from cache."""
         if os.path.exists(segments_cache_path):
             print("🤖 Loading segments from cache...")
             with open(segments_cache_path, 'r') as f:
@@ -89,18 +139,25 @@ class PatternAnalyzer:
             all_segments = []
             for file_path, file_data in files_data.items():
                 print(f"📄 Analyzing file: {file_path}")
-                segments_result = self.slm_extractor.extract_patterns(file_data['content'], file_data['language'])
-                for segment in segments_result.segments:
-                    segment_dict = {
-                        'code': segment['code'],
-                        'line_start': segment['line_start'],
-                        'line_end': segment['line_end'],
-                        'description': segment['description'],
-                        'file_path': str(file_path),
-                        'file_name': file_data['file_name']
-                    }
-                    all_segments.append(segment_dict)
-            
+                
+                # Chunk large files
+                file_content = file_data['content']
+                chunks = self._chunk_file_content(file_content)
+                print(f"   📦 Split into {len(chunks)} chunks")
+                for chunk_idx, chunk_content in enumerate(chunks):
+                    segments_result = self.slm_extractor.extract_patterns(chunk_content, file_data['language'])
+                    for segment in segments_result.segments:
+                        segment_dict = {
+                            'code': segment.code,
+                            'line_start': segment.line_start,
+                            'line_end': segment.line_end,
+                            'description': segment.description,
+                            'file_path': str(file_path),
+                            'file_name': file_data['file_name'],
+                            'chunk_index': chunk_idx
+                        }
+                        all_segments.append(segment_dict)
+
             self.stats['segments_found'] = len(all_segments)
             
             segments_cache = {
@@ -108,17 +165,15 @@ class PatternAnalyzer:
                 "config": {
                     "codebase_path": str(self.codebase_path),
                     "model_name": self.model_name,
-                    "eps": self.eps
                 }
             }
             with open(segments_cache_path, 'w') as f:
                 json.dump(segments_cache, f, indent=2)
         
-        if not all_segments:
-            print("⚠️  No patterns found in codebase")
-            return {"patterns": [], "stats": self.stats}
-        
-        # Step 3: Generate embeddings for descriptions (or load from cache)
+        return all_segments
+    
+    def _generate_embeddings(self, all_segments: list, embeddings_cache_path: str):
+        """Generate embeddings for segment descriptions or load from cache."""
         if os.path.exists(embeddings_cache_path):
             print("🧠 Loading embeddings from cache...")
             with open(embeddings_cache_path, 'r') as f:
@@ -136,31 +191,56 @@ class PatternAnalyzer:
                 "config": {
                     "codebase_path": str(self.codebase_path),
                     "model_name": self.model_name,
-                    "eps": self.eps
                 }
             }
             with open(embeddings_cache_path, 'w') as f:
                 json.dump(embeddings_cache, f, indent=2)
         
-        # Step 4: Cluster patterns
+        return embeddings
+    
+    def _cluster_patterns(self, all_segments: list, embeddings) -> list:
+        """Cluster patterns using DBSCAN algorithm."""
         print("📊 Clustering patterns...")
         patterns = self.pattern_clusterer.cluster_patterns(all_segments, embeddings)
         self.stats['patterns_detected'] = len(patterns)
-        
-        # Step 5: Generate output
+        return patterns
+    
+    def _generate_output(self, patterns: list) -> Dict[str, Any]:
+        """Generate final output structure and save results."""
         result = {
             "patterns": patterns,
             "stats": self.stats,
             "config": {
                 "codebase_path": str(self.codebase_path),
                 "model_name": self.model_name,
-                "eps": self.eps
             }
         }
         
         # Save results
         with open(self.output_path, 'w') as f:
             json.dump(result, f, indent=2)
+        
+        return result
+    
+    def analyze(self) -> Dict[str, Any]:
+        """Run the complete analysis pipeline with cache support."""
+        print("🔍 Starting code pattern analysis...")
+        
+        files_cache_path, segments_cache_path, embeddings_cache_path = self._get_cache_paths()
+        
+        files_data = self._process_files(files_cache_path)
+        
+        all_segments = self._extract_segments(files_data, segments_cache_path)
+        
+        if not all_segments:
+            print("⚠️  No patterns found in codebase")
+            return {"patterns": [], "stats": self.stats}
+        
+        embeddings = self._generate_embeddings(all_segments, embeddings_cache_path)
+        
+        patterns = self._cluster_patterns(all_segments, embeddings)
+        
+        result = self._generate_output(patterns)
         
         return result
     
@@ -185,10 +265,8 @@ def main():
     parser.add_argument('path', help='Path to codebase directory')
     parser.add_argument('--output', '-o', default='patterns.json', 
                        help='Output JSON file path (default: patterns.json)')
-    parser.add_argument('--model', '-m', default='default',
+    parser.add_argument('--model', '-m', default=None,
                        help='SLM model name in LM Studio (default: default)')
-    parser.add_argument('--eps', type=float, default=0.35,
-                       help='DBSCAN epsilon parameter (default: 0.35)')
     parser.add_argument('--clear-cache', action='store_true',
                        help='Clear all cache files before running analysis')
     
@@ -214,7 +292,6 @@ def main():
         codebase_path=args.path,
         output_path=args.output,
         model_name=args.model,
-        eps=args.eps
     )
     
     try:
