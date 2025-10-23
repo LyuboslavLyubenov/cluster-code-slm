@@ -103,7 +103,7 @@ class SLMExtractor:
     def _build_prompt(self, code: str, language: str) -> str:
         """Build the model prompt for pattern extraction."""
         try:
-            with open('analyze_file.md', 'r') as f:
+            with open('./prompts/analyze_file.md', 'r') as f:
                 prompt_template = f.read()
         except FileNotFoundError:
             raise FileNotFoundError("analyze_file.md not found - please create the prompt file")
