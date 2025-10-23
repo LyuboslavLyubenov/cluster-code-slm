@@ -10,7 +10,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Literal, Optional, Union
 
 from file_processor import FileProcessor
 from slm_extractor import SLMExtractor
@@ -18,18 +18,28 @@ from embedding_service import EmbeddingService
 from pattern_clusterer import PatternClusterer
 
 
+class LLMBackendConfig:
+    """Configuration for LLM backend selection."""
+    
+    def __init__(self, backend: Literal["lmstudio", "llamacpp"] = "lmstudio", model_path: str = "qwen/qwen3-4b-2507", embedding_path: str = "text-embedding-qwen3-embedding-0.6b", use_http: bool = False, base_url: str = "http://localhost:1234"):
+        self.backend = backend
+        self.use_http = use_http
+        self.model_path = model_path
+        self.embedding_path = embedding_path
+        self.base_url = base_url
+
 class PatternAnalyzer:
     """Main orchestrator for code pattern analysis pipeline."""
     
     def __init__(self, codebase_path: str, output_path: str = "patterns.json", 
-                 model_name: Optional[str] = None):
+                 llm_backend_config: LLMBackendConfig = LLMBackendConfig()):
         self.codebase_path = Path(codebase_path)
         self.output_path = output_path
-        self.model_name = model_name or "qwen/qwen3-4b-2507"
+        self.model_name = llm_backend_config.model_path
         
         self.file_processor = FileProcessor()
-        self.slm_extractor = SLMExtractor(self.model_name, use_http=False, base_url="http://192.168.50.184:1234")
-        self.embedding_service = EmbeddingService("text-embedding-qwen3-embedding-0.6b", backend="lmstudio")
+        self.slm_extractor = SLMExtractor(llm_backend_config.model_path, use_http=llm_backend_config.use_http, base_url=llm_backend_config.base_url, backend=llm_backend_config.backend)
+        self.embedding_service = EmbeddingService(llm_backend_config.embedding_path, backend=llm_backend_config.backend)
         self.pattern_clusterer = PatternClusterer()
         
         self.stats = {
@@ -265,10 +275,14 @@ def main():
     parser.add_argument('path', help='Path to codebase directory')
     parser.add_argument('--output', '-o', default='patterns.json', 
                        help='Output JSON file path (default: patterns.json)')
-    parser.add_argument('--model', '-m', default=None,
-                       help='SLM model name in LM Studio (default: default)')
+    parser.add_argument('--model', '-m', default="qwen/qwen3-4b-2507",
+                       help='SLM model name (default: qwen/qwen3-4b-2507). Use local path for llama-cpp-python models.')
     parser.add_argument('--clear-cache', action='store_true',
                        help='Clear all cache files before running analysis')
+    parser.add_argument('--backend', '-b', choices=['lmstudio', 'llamacpp'], default='lmstudio',
+                       help='LLM backend to use (default: lmstudio)')
+    parser.add_argument('--embedding-model', '-e', default='text-embedding-qwen3-embedding-0.6b',
+                       help='Embedding model name/path (default: text-embedding-qwen3-embedding-0.6b). Use local path for llama-cpp-python models.')
     
     args = parser.parse_args()
     
@@ -291,7 +305,11 @@ def main():
     analyzer = PatternAnalyzer(
         codebase_path=args.path,
         output_path=args.output,
-        model_name=args.model,
+        llm_backend_config=LLMBackendConfig(
+            backend=args.backend,
+            model_path=args.model,
+            embedding_path=args.embedding_model,
+        )
     )
     
     try:
