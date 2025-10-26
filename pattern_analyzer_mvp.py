@@ -159,8 +159,6 @@ class PatternAnalyzer:
                     for segment in segments_result.segments:
                         segment_dict = {
                             'code': segment.code,
-                            'line_start': segment.line_start,
-                            'line_end': segment.line_end,
                             'description': segment.description,
                             'file_path': str(file_path),
                             'file_name': file_data['file_name'],
@@ -246,6 +244,7 @@ class PatternAnalyzer:
             print("⚠️  No patterns found in codebase")
             return {"patterns": [], "stats": self.stats}
         
+        self.embedding_service.load_model()
         embeddings = self._generate_embeddings(all_segments, embeddings_cache_path)
         
         patterns = self._cluster_patterns(all_segments, embeddings)

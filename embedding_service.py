@@ -12,8 +12,11 @@ class EmbeddingService:
     def __init__(self, model_path: str, backend: Literal["lmstudio", "llamacpp"] = "lmstudio"):
         self.model = None
         self.backend = backend
-        self._initialize_model(model_path=model_path)
+        self.model_path = model_path
     
+    def load_model(self):
+        self._initialize_model(model_path=self.model_path)
+
     def _initialize_model(self, model_path: str):
         """Initialize the embedding model with specified backend."""
         try:

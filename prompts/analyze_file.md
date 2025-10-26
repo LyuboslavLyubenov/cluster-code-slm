@@ -6,9 +6,7 @@ Output strictly in JSON format with this schema:
   "segments": [
     {{
       "code": "exact code lines as string (preserve original whitespace; escape newlines as \\n so this is a valid JSON string)",
-      "line_start": 5,
-      "line_end": 12,
-      "description": "brief purpose in 6–30 words (see description rules below)",
+      "description": "brief purpose in 8–35 words (see description rules below)",
       "confidence": 0.92
     }}
   ]
@@ -38,7 +36,7 @@ Summary of goals
 - If ambiguity persists, choose the conservative option: expand to the smallest enclosing function or component and mark the description with the note "includes context".
 
 3. Single clear purpose
-- Extract the smallest complete unit that performs one clear purpose (6–30 word description). Do not include multiple unrelated early returns or different UI branches in one segment. Example: Do NOT merge two separate early-return if-blocks (loading vs empty); extract them separately.
+- Extract the smallest complete unit that performs one clear purpose (8–35 word description). Do not include multiple unrelated early returns or different UI branches in one segment. Example: Do NOT merge two separate early-return if-blocks (loading vs empty); extract them separately.
 
 4. Whole function rule
 - Do not include entire functions unless the function is a single, widely reusable pattern (utility function, presentational component, custom hook). If you do include a whole function, ensure its body is single-purpose and describe that purpose.
@@ -75,8 +73,7 @@ Summary of goals
 - Output must be valid JSON only. No extra text or explanation.
 - The output MUST be a single JSON object with exactly one top-level key: "segments".
 - The "segments" value must be an array (possibly empty). Each element must conform to the schema shown above.
-- Use 1-based line numbers for line_start and line_end.
-- Sort segments by the deterministic ranking (see rule 12). If equal ranking, fall back to earlier line_start.
+- Sort segments by the deterministic ranking (see rule 12).
 
 12. Deterministic reusability ranking (to avoid ambiguous ordering)
 - Primary sort key: "confidence" (descending).
@@ -92,15 +89,15 @@ Summary of goals
   - External-deps penalty: if the block references many external variables (context, props, globals), subtract 10 for each distinct external reference beyond 1.
   - Purity bonus: if the block is pure (no side effects, no DOM or network) add +10.
   - Final S = category_weight - size_penalty - external_deps_penalty + purity_bonus.
-- Use S as the secondary sort key (descending). If S ties, use earlier line_start.
+- Use S as the secondary sort key (descending).
 - Implementation note: heuristics must be deterministic and rule-based (no random tie-breaking).
 
 13. Description quality rules (new — to improve downstream embeddings)
-- Each "description" must follow a consistent compact format: optionally start with a canonical TYPE tag in brackets (e.g., [API], [UI], [HOOK], [CONTEXT], [UTILITY], [HANDLER]) followed by a clear 6–30 word summary describing purpose, inputs/outputs or side-effects when relevant.
+- Each "description" must follow a consistent compact format: optionally start with a canonical TYPE tag in brackets (e.g., [API], [UI], [HOOK], [CONTEXT], [UTILITY], [HANDLER]) followed by a clear 8–35 word summary describing purpose, inputs/outputs or side-effects when relevant.
 - If possible and concise, include the primary side-effect in the description (e.g., "network GET /tickets/search", "context.setSelectedTicket", "renders loading UI").
 - Examples of allowed descriptions:
   - "[API] Fetches Ticket[] by query; throws on non-OK; network GET /tickets/search"
-  - "[HOOK] Returns ticket context {selectedTicket, setSelectedTicket}; throws if missing provider"
+  - "[HOOK] Returns ticket context {selectedTicket, setSelectedTicket}; throws if missing provider
   - "[UI] Render loading state spinner and text"
 - If description includes "includes context" or "truncated" note those exact phrases.
 
@@ -116,8 +113,6 @@ if (isLoading) {{
 Output snippet (inside segments array):
 {{
   "code": "if (isLoading) {{\n  return (<div className=\\\"loading\\\">Loading</div>);\n}}",
-  "line_start": 10,
-  "line_end": 12,
   "description": "[UI] Render loading state",
   "confidence": 0.95
 }}
@@ -128,8 +123,6 @@ const truncate = (s, n) => s.length > n ? s.slice(0,n) + '...' : s;
 Output snippet:
 {{
   "code": "const truncate = (s, n) => s.length > n ? s.slice(0,n) + '...' : s;",
-  "line_start": 5,
-  "line_end": 5,
   "description": "[UTILITY] Truncate string with ellipsis",
   "confidence": 0.93
 }}

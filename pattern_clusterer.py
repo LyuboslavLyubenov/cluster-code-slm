@@ -92,8 +92,6 @@ class PatternClusterer:
                         'example_code': segment['code'],
                         'occurrences': [{
                             'file_path': segment['file_path'],
-                            'line_start': segment['line_start'],
-                            'line_end': segment['line_end']
                         }],
                         'occurrence_count': 1
                     })
@@ -109,8 +107,7 @@ class PatternClusterer:
                         'example_code': segments[0]['code'],
                         'occurrences': [{
                             'file_path': seg['file_path'],
-                            'line_start': seg['line_start'],
-                            'line_end': seg['line_end']
+                            'code': seg['code']
                         } for seg in segments],
                         'occurrence_count': len(segments)
                     })
@@ -122,23 +119,14 @@ class PatternClusterer:
     def _generate_cluster_title(self, segments: List[Dict[str, Any]]) -> str:
         """Generate a cluster title using SLM based on all children descriptions."""
         try:
-            # Combine all descriptions from the cluster
-            all_descriptions = "\n".join([seg['description'] for seg in segments])
-
-            # Create prompt for SLM to generate a unified cluster title
-            prompt = f"""
-            You are analyzing a cluster of similar code patterns. Below are descriptions of individual code segments that belong to the same cluster:
+            # Extract just descriptions for pattern analysis
+            descriptions = [seg['description'] for seg in segments]
             
-            {all_descriptions}
+            # Analyze the pattern types in this cluster
+            pattern_types = self._analyze_pattern_types(descriptions)
             
-            Please generate a single, concise title that captures the common theme or pattern across all these descriptions. 
-            The title should be descriptive and specific to the code patterns.
-            
-            Return json object in the format:
-            {{
-                "title": "your generated title here"
-            }}
-            """
+            # Create enhanced prompt for SLM
+            prompt = self._build_cluster_title_prompt(descriptions, pattern_types, segments)
             
             print(f"🤖 Generating cluster title for {len(segments)} segments...")
             result = self.llm_client.call_model(prompt)
@@ -152,11 +140,108 @@ class PatternClusterer:
                 
         except Exception as e:
             print(f"⚠️  SLM cluster title generation failed: {e}")
-            # Fallback to most common description
+            return self._get_fallback_title(segments)
+    
+    def _analyze_pattern_types(self, descriptions: List[str]) -> Dict[str, Any]:
+        """Analyze the types of patterns in the cluster."""
+        type_counts = {}
+        for desc in descriptions:
+            # Extract pattern type from [TYPE] format
+            if desc.startswith('[') and ']' in desc:
+                pattern_type = desc.split(']')[0] + ']'
+                type_counts[pattern_type] = type_counts.get(pattern_type, 0) + 1
+        
+        dominant_type = max(type_counts.items(), key=lambda x: x[1])[0] if type_counts else "[PATTERN]"
+        
+        return {
+            'types': type_counts,
+            'dominant_type': dominant_type,
+            'total_segments': len(descriptions)
+        }
+    
+    def _build_cluster_title_prompt(self, descriptions: List[str], pattern_types: Dict[str, Any], segments: List[Dict[str, Any]]) -> str:
+        """Build enhanced prompt for cluster title generation."""
+        descriptions_text = "\n".join([f"- {desc}" for desc in descriptions])
+        
+        # Sample a few code snippets for context (limit to avoid token overflow)
+        sample_codes = []
+        for i, seg in enumerate(segments[:3]):  # Sample first 3 codes
+            code_preview = seg['code']
+            sample_codes.append(f"Example {i+1}:\n```\n{code_preview}\n```")
+        
+        sample_codes_text = "\n\n".join(sample_codes)
+        
+        prompt = f"""
+You are analyzing a cluster of {pattern_types['total_segments']} similar code patterns that have been grouped together by semantic similarity.
+
+## PATTERN TYPE ANALYSIS:
+- Dominant pattern type: {pattern_types['dominant_type']}
+- Type distribution: {pattern_types['types']}
+
+## INDIVIDUAL PATTERN DESCRIPTIONS:
+{descriptions_text}
+
+## SAMPLE CODE PATTERNS:
+{sample_codes_text}
+
+## TASK:
+Generate a single, concise title that captures the ESSENCE of this code pattern cluster. The title should:
+
+1. Use the same [TYPE] format as individual descriptions (e.g., {pattern_types['dominant_type']})
+2. Be specific about the COMMON functionality across all patterns
+3. Highlight the CORE purpose or behavior
+4. Be 8-35 words maximum
+5. Focus on WHAT the pattern does, not implementation details
+
+## EXAMPLES OF GOOD CLUSTER TITLES:
+- "[API] Fetches and processes user data with error handling and loading states"
+- "[UI] Renders form validation feedback with conditional styling"
+- "[HOOK] Manages component state with persistence and cleanup"
+- "[UTILITY] Transforms and formats data for display purposes"
+
+## OUTPUT FORMAT:
+Return ONLY valid JSON in this exact format:
+{{
+    "title": "your generated title here"
+}}
+
+Your response:
+"""
+        return prompt
+    
+    def _get_fallback_title(self, segments: List[Dict[str, Any]]) -> str:
+        """Generate a fallback title when SLM fails."""
+        # Try to extract common words from descriptions
+        descriptions = [seg['description'] for seg in segments]
+        
+        # Find most common type
+        type_counts = {}
+        for desc in descriptions:
+            if desc.startswith('[') and ']' in desc:
+                pattern_type = desc.split(']')[0] + ']'
+                type_counts[pattern_type] = type_counts.get(pattern_type, 0) + 1
+        
+        dominant_type = max(type_counts.items(), key=lambda x: x[1])[0] if type_counts else "[PATTERN]"
+        
+        # Extract common keywords
+        words = []
+        for desc in descriptions:
+            # Remove type tags and split into words
+            clean_desc = desc.split(']')[-1] if ']' in desc else desc
+            words.extend(clean_desc.lower().split())
+        
+        from collections import Counter
+        common_words = [word for word, count in Counter(words).most_common(5) 
+                       if len(word) > 3 and count > 1]
+        
+        if common_words:
+            fallback = f"{dominant_type} Pattern involving {', '.join(common_words[:3])}"
+        else:
+            # Use most frequent description
             desc_counts = {}
-            for seg in segments:
-                desc = seg['description']
+            for desc in descriptions:
                 desc_counts[desc] = desc_counts.get(desc, 0) + 1
-            fallback_title = max(desc_counts.items(), key=lambda x: x[1])[0]
-            print(f"⚠️  Using fallback title after error: {fallback_title}")
-            return fallback_title
+            fallback = max(desc_counts.items(), key=lambda x: x[1])[0]
+        
+        print(f"⚠️  Using enhanced fallback title: {fallback}")
+        return fallback
