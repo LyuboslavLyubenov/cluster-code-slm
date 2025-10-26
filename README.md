@@ -4,7 +4,7 @@ A lightweight tool that identifies recurring logic patterns in codebases using l
 
 ## Overview
 
-The Code Pattern Analyzer MVP uses a **SLM-first approach** to automatically detect and cluster similar code patterns across your codebase. It leverages local language models through LM Studio to understand code semantics and identify reusable programming constructs.
+The Code Pattern Analyzer MVP uses a **SLM-first approach** to automatically detect and cluster similar code patterns across your codebase. It leverages local language models through multiple backends (LM Studio and llama-cpp-python) to understand code semantics and identify reusable programming constructs.
 
 ## How It Works
 
@@ -18,6 +18,8 @@ The Code Pattern Analyzer MVP uses a **SLM-first approach** to automatically det
 ### Architecture
 
 - **SLM-First Approach**: Delegates pattern identification entirely to local language models
+- **Multi-Backend Support**: Works with LM Studio and llama-cpp-python
+- **Smart File Chunking**: Automatically splits large files into manageable chunks with balanced nesting
 - **Semantic Clustering**: Groups patterns based on meaning rather than syntax
 - **Progressive Analysis**: Automatically adjusts clustering parameters for small datasets
 - **Cross-Language Support**: Works with multiple programming languages
@@ -42,7 +44,8 @@ python pattern_analyzer_mvp.py /path/to/your/codebase
 python pattern_analyzer_mvp.py /path/to/codebase \
   --output results.json \
   --model "qwen/qwen3-4b-2507" \
-  --eps 0.35 \
+  --embedding-model "text-embedding-qwen3-embedding-0.6b" \
+  --backend lmstudio \
   --clear-cache
 ```
 
@@ -52,9 +55,28 @@ python pattern_analyzer_mvp.py /path/to/codebase \
 
 - `path` (required): Path to codebase directory to analyze
 - `--output/-o`: Output JSON file path (default: `patterns.json`)
-- `--model/-m`: SLM model name in LM Studio (default: "default")
-- `--eps`: DBSCAN epsilon parameter for clustering (default: 0.35)
+- `--model/-m`: SLM model name/path (default: "qwen/qwen3-4b-2507"). Use local path for llama-cpp-python models.
+- `--embedding-model/-e`: Embedding model name/path (default: "text-embedding-qwen3-embedding-0.6b"). Use local path for llama-cpp-python models.
+- `--backend/-b`: LLM backend to use - "lmstudio" or "llamacpp" (default: "lmstudio")
 - `--clear-cache`: Clear all cache files before running analysis
+
+### Usage Examples
+
+#### LM Studio Backend (Default)
+```bash
+python pattern_analyzer_mvp.py /path/to/codebase \
+  --model "qwen/qwen3-4b-2507" \
+  --embedding-model "text-embedding-qwen3-embedding-0.6b" \
+  --backend lmstudio
+```
+
+#### llama-cpp-python Backend
+```bash
+python pattern_analyzer_mvp.py /path/to/codebase \
+  --model "/path/to/model.gguf" \
+  --embedding-model "/path/to/embedding-model.gguf" \
+  --backend llamacpp
+```
 
 ## Supported Languages
 
@@ -114,17 +136,29 @@ Use `--clear-cache` to force a fresh analysis.
 ## Requirements
 
 - Python 3.8+
-- **LM Studio** with compatible SLM models
-- **Qwen embedding model** for semantic embeddings (Mungert/Qwen3-Embedding-4B-GGUF)
+- **LLM Backend**: LM Studio OR llama-cpp-python with compatible SLM models
+- **Qwen embedding model** for semantic embeddings (text-embedding-qwen3-embedding-0.6b)
 - **Qwen3 model** optimized for pattern extraction (qwen/qwen3-4b-2507)
 - Required packages in `requirements.txt`
 
+### Backend Configuration
+
+#### LM Studio Setup
+1. Install and run LM Studio
+2. Load your preferred models for pattern extraction and embeddings
+3. Ensure the server is running on `http://localhost:1234` (default)
+
+#### llama-cpp-python Setup
+1. Install llama-cpp-python: `pip install llama-cpp-python`
+2. Download GGUF model files for both pattern extraction and embeddings
+3. Use local file paths for `--model` and `--embedding-model` parameters
+
 ## Components
 
-- `pattern_analyzer_mvp.py`: Main orchestrator and CLI interface
+- `pattern_analyzer_mvp.py`: Main orchestrator and CLI interface with multi-backend support
 - `file_processor.py`: File scanning and language detection
-- `slm_extractor.py`: SLM-powered pattern extraction
-- `embedding_service.py`: Semantic embedding generation
+- `slm_extractor.py`: SLM-powered pattern extraction with LM Studio and llama-cpp-python backends
+- `embedding_service.py`: Semantic embedding generation with multiple backend support
 - `pattern_clusterer.py`: UMAP + HDBSCAN clustering
 - `analyze_file.md`: SLM prompt template for pattern extraction
 
