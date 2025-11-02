@@ -38,18 +38,15 @@ class EmbeddingService:
             return np.array([])
         
         try:
-            if self.model:
-                embeddings = []
-                for desc in descriptions:
-                    if self.backend == "lmstudio":
-                        embedding = self.model.embed(desc)
-                    else:  # llamacpp
-                        embedding_result = self.model.create_embedding(desc)
-                        embedding = embedding_result["data"][0]["embedding"]
-                    embeddings.append(embedding)
-                embeddings = np.array(embeddings)
-            else:
-                embeddings = self._mock_embeddings(descriptions)
+            embeddings = []
+            for desc in descriptions:
+                if self.backend == "lmstudio":
+                    embedding = self.model.embed(desc)
+                else:  # llamacpp
+                    embedding_result = self.model.create_embedding(desc)
+                    embedding = embedding_result["data"][0]["embedding"]
+                embeddings.append(embedding)
+            embeddings = np.array(embeddings)
             
             return embeddings
             
