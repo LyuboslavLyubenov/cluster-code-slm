@@ -58,12 +58,14 @@ class ModelClient:
         if not self.client:
             raise RuntimeError("Model client not initialized")
         
+        # validate that backend is lmstudi and cast to lmstudio and .respond
         if self.backend == "lmstudio":
-            result = self.client.respond(prompt)
+            lmStudio_client = self.client
+            result = lmStudio_client.respond(prompt) # type: ignore
             return str(result)
         else:  # llamacpp
-            result = self.client.create_completion(prompt, max_tokens=512, stop=["\n"], echo=False)
-            return result["choices"][0]["text"]
+            result = self.client.create_completion(prompt, max_tokens=32768, stop=["\n"], echo=False) # type: ignore
+            return result["choices"][0]["text"] # type: ignore
     
     def _call_model_http(self, prompt: str) -> str:
         """Call model using HTTP API."""
@@ -73,7 +75,7 @@ class ModelClient:
             "model": self.model_name,
             "prompt": prompt,
             "temperature": 0.5,
-            "max_tokens": 512
+            "max_tokens": 32768
         }
         
         response = requests.post(url, json=payload)

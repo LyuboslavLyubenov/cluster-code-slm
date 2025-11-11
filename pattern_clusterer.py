@@ -38,11 +38,9 @@ class PatternClusterer:
             return []
         
         try:
-            # Adjust UMAP parameters if embeddings are too small
             n_samples = len(embeddings)
             print(f"📊 Clustering {n_samples} samples...")
             
-            # For very small datasets, skip UMAP and use raw embeddings
             if n_samples <= 5:
                 print(f"📊 Using raw embeddings (too few samples for UMAP)")
                 reduced_embeddings = embeddings
@@ -56,7 +54,10 @@ class PatternClusterer:
                 
                 reduced_embeddings = self.umap.fit_transform(embeddings)
             
-            labels = self.hdbscan.fit_predict(reduced_embeddings)
+            reduced = np.asarray(reduced_embeddings, dtype=np.float64)
+            if reduced.ndim == 1:
+                reduced = reduced.reshape(-1, 1)
+            labels = self.hdbscan.fit_predict(reduced)
             labels_list = labels.tolist() if hasattr(labels, 'tolist') else list(labels)
 
             clusters = self._group_by_cluster(segments, labels_list)
@@ -96,9 +97,7 @@ class PatternClusterer:
                         'occurrence_count': 1
                     })
             else:
-                # Grouped pattern
                 if len(segments) >= self.min_samples:
-                    # Generate cluster title using SLM based on all children descriptions
                     cluster_description = self._generate_cluster_title(segments)
                     
                     patterns.append({
@@ -118,29 +117,21 @@ class PatternClusterer:
     
     def _generate_cluster_title(self, segments: List[Dict[str, Any]]) -> str:
         """Generate a cluster title using SLM based on all children descriptions."""
-        try:
-            # Extract just descriptions for pattern analysis
-            descriptions = [seg['description'] for seg in segments]
-            
-            # Analyze the pattern types in this cluster
-            pattern_types = self._analyze_pattern_types(descriptions)
-            
-            # Create enhanced prompt for SLM
-            prompt = self._build_cluster_title_prompt(descriptions, pattern_types, segments)
-            
-            print(f"🤖 Generating cluster title for {len(segments)} segments...")
-            result = self.llm_client.call_model(prompt)
-            
-            import json
-            parsed_result = json.loads(result)
-            title = parsed_result.get("title", result)  # Fallback to raw result if title not found
-            
-            print(f"✅ Generated cluster title: {title}")
-            return title
-                
-        except Exception as e:
-            print(f"⚠️  SLM cluster title generation failed: {e}")
-            return self._get_fallback_title(segments)
+
+        descriptions = [seg['description'] for seg in segments]
+        pattern_types = self._analyze_pattern_types(descriptions)
+        prompt = self._build_cluster_title_prompt(descriptions, pattern_types, segments)
+        
+        print(f"🤖 Generating cluster title for {len(segments)} segments...")
+        result = self.llm_client.call_model(prompt)
+        
+        import json
+        parsed_result = json.loads(result)
+        title = parsed_result.get("title", result)
+        
+        print(f"✅ Generated cluster title: {title}")
+        return title
+     
     
     def _analyze_pattern_types(self, descriptions: List[str]) -> Dict[str, Any]:
         """Analyze the types of patterns in the cluster."""
@@ -163,9 +154,8 @@ class PatternClusterer:
         """Build enhanced prompt for cluster title generation."""
         descriptions_text = "\n".join([f"- {desc}" for desc in descriptions])
         
-        # Sample a few code snippets for context (limit to avoid token overflow)
         sample_codes = []
-        for i, seg in enumerate(segments[:3]):  # Sample first 3 codes
+        for i, seg in enumerate(segments[:3]):
             code_preview = seg['code']
             sample_codes.append(f"Example {i+1}:\n```\n{code_preview}\n```")
         
@@ -208,8 +198,6 @@ Return ONLY valid JSON in this exact format:
 Your response:
 """
         return prompt
-    
-    def _get_fallback_title(self, segments: List[Dict[str, Any]]) -> str:
         """Generate a fallback title when SLM fails."""
         # Try to extract common words from descriptions
         descriptions = [seg['description'] for seg in segments]
